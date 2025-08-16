@@ -21,7 +21,20 @@ export default function ChatBox({ communityId }) {
   useEffect(() => {
     socket.on("receiveMessage", (msg) => {
       if (msg.communityId === communityId) {
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) => {
+          // Check if message already exists (prevent duplicates from optimistic updates)
+          const isDuplicate = prev.some(existingMsg => 
+            existingMsg.text === msg.text && 
+            existingMsg.userId === msg.userId && 
+            Math.abs(new Date(existingMsg.timestamp) - new Date(msg.timestamp)) < 1000 // Within 1 second
+          );
+          
+          if (isDuplicate) {
+            return prev; // Don't add duplicate
+          }
+          
+          return [...prev, msg];
+        });
         scrollToBottom();
       }
     });
@@ -31,8 +44,24 @@ export default function ChatBox({ communityId }) {
   const sendMessage = () => {
     if (!text.trim()) return;
     const userId = localStorage.getItem("userId"); // from AuthContext
-    socket.emit("sendMessage", { communityId, text, userId });
+    
+    // Create message object
+    const newMessage = {
+      communityId,
+      text,
+      userId,
+      timestamp: new Date().toISOString() // Add timestamp if needed
+    };
+    
+    // Optimistically add message to local state
+    setMessages((prev) => [...prev, newMessage]);
+    
+    // Emit to server
+    socket.emit("sendMessage", newMessage);
+    
+    // Clear input and scroll
     setText("");
+    scrollToBottom();
   };
 
   return (
